@@ -14,222 +14,83 @@
       display: flex;
       flex-direction: column;
     }
-
     #titulo {
       padding: 10px 20px;
-      background: #2c3e50;
+      background: #006400;
       color: white;
       font-size: 1.5rem;
-      font-weight: bold;
-    }
-
-    #radioBtn {
-      position: absolute;
-      top: 140px;
-      left: 10px;
-      background-color: #ffffff;
-      color: #2c3e50;
-      padding: 10px 16px;
-      cursor: pointer;
-      border: 2px solid #2c3e50;
-      border-radius: 6px;
-      font-weight: bold;
-      z-index: 1000;
+      font-weight: 700;
       user-select: none;
     }
-
-    #radioBtn.active {
-      background-color: #c82333;
-      color: white;
-    }
-
     #map {
-      height: 60vh;
+      height: 90vh;
       width: 100%;
-    }
-
-    #contenedorResumen, #clasificacion {
-      margin: 10px 20px;
-      font-weight: 600;
-      display: none;
-    }
-
-    #contenedorTabla {
-      margin: 10px 20px 20px;
-      resize: vertical;
-      overflow-y: auto;
-      min-height: 100px;
-      max-height: 35vh;
-      border: 1px solid #ccc;
-      background: white;
-    }
-
-    #tablaResultados {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.9rem;
-    }
-
-    #tablaResultados th, #tablaResultados td {
-      padding: 8px 12px;
-      border: 1px solid #ccc;
-    }
-
-    #tablaResultados thead {
-      background-color: #2c3e50;
-      color: white;
-      position: sticky;
-      top: 0;
+      position: relative;
     }
   </style>
 </head>
 <body>
-
   <div id="titulo">Visor de Plagas Forestales</div>
-  <div id="radioBtn" onclick="activarHerramientaRadio()">🎯 Activar Radio</div>
   <div id="map"></div>
-  <div id="contenedorResumen"></div>
-  <div id="contenedorTabla" hidden>
-    <table id="tablaResultados">
-      <thead>
-        <tr>
-          <th>Capa</th>
-          <th>Valor</th>
-          <th>Latitud</th>
-          <th>Longitud</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
-  <div id="clasificacion"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script>
-    const map = L.map('map').setView([21.5, -100.9], 8);
+    const map = L.map('map').setView([21.0, -101.0], 7);
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 18,
+      maxZoom: 19,
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    let modoRadio = false;
-    let radioCapa = null;
-    const subcapas = {};
-    const tablaResultados = document.querySelector('#tablaResultados tbody');
-    const contenedorTabla = document.getElementById('contenedorTabla');
-    const contenedorResumen = document.getElementById('contenedorResumen');
-    const divClasificacion = document.getElementById('clasificacion');
-    const radioBtn = document.getElementById('radioBtn');
-
-    const capas = [
-      { archivo: "Areas de Atencion Prioritaria 2025.geojson", atributo: "Rie_Jun_De" },
-      { archivo: "Descortezador Junio 2025.geojson", atributo: "Rie_Jun_De" },
-      { archivo: "Plantas Parasitas 2025.geojson", atributo: "Riesg_PP25" },
-      { archivo: "Riesgo Cactoblastis Cactorum 2025.geojson", atributo: "R_Cacto" },
-      { archivo: "Riesgo Cactophagus Spinolae 2024.geojson", atributo: "N_Riesgo" },
-      { archivo: "Riesgo Defoliadores Junio 2025.geojson", atributo: "Ri_Def_Jun" },
-      { archivo: "Riesgo Monarthrum 2024.geojson", atributo: "N_RIESGO" }
+    const capasGeojson = [
+      { archivo: 'Areas de Atencion Prioritaria 2025.geojson', campo: null },
+      { archivo: 'Descortezador Junio 2025.geojson', campo: 'Rie_Jun_De' },
+      { archivo: 'Plantas Parasitas 2025.geojson', campo: 'Riesg_PP25' },
+      { archivo: 'Riesgo Cactoblastis Cactorum 2025.geojson', campo: 'R_Cacto' },
+      { archivo: 'Riesgo Cactophagus Spinolae 2024.geojson', campo: 'N_Riesgo' },
+      { archivo: 'Riesgo Defoliadores Junio 2025.geojson', campo: 'Ri_Def_Jun' },
+      { archivo: 'Riesgo Monarthrum 2024.geojson', campo: 'N_RIESGO' }
     ];
 
     const capasControl = {};
 
-    capas.forEach(capa => {
+    capasGeojson.forEach(capa => {
       fetch(capa.archivo)
         .then(res => res.json())
         .then(data => {
-          const grupo = L.layerGroup();
-          data.features.forEach(f => {
-            const coords = f.geometry.coordinates;
-            let latlng = (f.geometry.type === "Point") ? [coords[1], coords[0]] :
-                         (f.geometry.type === "MultiPoint") ? [coords[0][1], coords[0][0]] :
-                         [coords[0][1], coords[0][0]];
-
-            const valor = f.properties[capa.atributo] ?? 'Sin dato';
-            const marker = L.circleMarker(latlng, {
-              radius: 5,
-              fillColor: "#007bff",
-              color: "#000",
-              weight: 1,
-              fillOpacity: 0.7
-            }).bindPopup(`<strong>${capa.archivo}</strong><br><strong>Valor:</strong> ${valor}`);
-
-            marker.feature = f;
-            marker.feature.latlng = latlng;
-            grupo.addLayer(marker);
+          const layer = L.geoJSON(data, {
+            onEachFeature: function (feature, layer) {
+              let popup = `<strong>${capa.archivo.replace('.geojson', '')}</strong>`;
+              if (capa.campo && feature.properties[capa.campo] !== undefined) {
+                popup += `<br><strong>${capa.campo}:</strong> ${feature.properties[capa.campo]}`;
+              }
+              layer.bindPopup(popup);
+            },
+            pointToLayer: function (feature, latlng) {
+              return L.circleMarker(latlng, {
+                radius: 6,
+                fillColor: '#006400',
+                color: '#000',
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.7
+              });
+            },
+            style: function (feature) {
+              return {
+                color: '#228B22',
+                weight: 1,
+                fillOpacity: 0.4
+              };
+            }
           });
 
-          grupo.addTo(map);
-          subcapas[capa.archivo] = grupo;
-          capasControl[capa.archivo] = grupo;
+          layer.addTo(map);
+          const nombreCapa = capa.archivo.replace('.geojson', '');
+          capasControl[nombreCapa] = layer;
           L.control.layers(null, capasControl, { collapsed: false }).addTo(map);
-        });
-    });
-
-    function activarHerramientaRadio() {
-      modoRadio = !modoRadio;
-      radioBtn.classList.toggle('active');
-      radioBtn.textContent = modoRadio ? '🛑 Cancelar Radio' : '🎯 Activar Radio';
-      if (radioCapa) {
-        map.removeLayer(radioCapa);
-        radioCapa = null;
-      }
-      tablaResultados.innerHTML = '';
-      contenedorTabla.hidden = true;
-      contenedorResumen.style.display = 'none';
-      divClasificacion.style.display = 'none';
-    }
-
-    function clasificarRiesgo(num) {
-      if (num > 50) return { prob: 'Alto', impacto: 'Alto', riesgo: 'Alto' };
-      if (num > 20) return { prob: 'Medio', impacto: 'Medio', riesgo: 'Medio' };
-      if (num > 0) return { prob: 'Bajo', impacto: 'Bajo', riesgo: 'Bajo' };
-      return { prob: '-', impacto: '-', riesgo: '-' };
-    }
-
-    map.on('click', e => {
-      if (!modoRadio) return;
-
-      if (radioCapa) map.removeLayer(radioCapa);
-      radioCapa = L.circle(e.latlng, {
-        radius: 500,
-        color: 'red',
-        fillColor: '#f03',
-        fillOpacity: 0.3
-      }).addTo(map);
-
-      let conteo = 0;
-      let resumen = '';
-      tablaResultados.innerHTML = '';
-      const idsContados = new Set();
-
-      for (const nombre in subcapas) {
-        const grupo = subcapas[nombre];
-        grupo.eachLayer(marker => {
-          const latlng = marker.getLatLng();
-          const id = latlng.lat.toFixed(6) + "," + latlng.lng.toFixed(6);
-          if (e.latlng.distanceTo(latlng) <= 500 && !idsContados.has(id)) {
-            idsContados.add(id);
-            conteo++;
-            const props = marker.feature?.properties;
-            const keys = Object.keys(props);
-            const valor = keys.length ? props[keys.find(k => k.toLowerCase().includes('ries'))] ?? '-' : '-';
-            tablaResultados.innerHTML += `<tr>
-              <td>${nombre}</td>
-              <td>${valor}</td>
-              <td>${latlng.lat.toFixed(6)}</td>
-              <td>${latlng.lng.toFixed(6)}</td>
-            </tr>`;
-          }
-        });
-      }
-
-      contenedorTabla.hidden = conteo === 0;
-      contenedorResumen.style.display = conteo ? 'block' : 'none';
-      divClasificacion.style.display = conteo ? 'block' : 'none';
-
-      contenedorResumen.textContent = `Se encontraron ${conteo} registros en un radio de 500 metros.`;
-      const clasif = clasificarRiesgo(conteo);
-      divClasificacion.innerHTML = `<strong>Probabilidad:</strong> ${clasif.prob} | <strong>Impacto:</strong> ${clasif.impacto} | <strong>Riesgo:</strong> ${clasif.riesgo}`;
+        })
+        .catch(err => console.error('Error al cargar', capa.archivo, err));
     });
   </script>
 </body>
