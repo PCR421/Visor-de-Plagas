@@ -16,81 +16,163 @@
     }
     #titulo {
       padding: 10px 20px;
-      background: #006400;
+      background: #003366;
       color: white;
       font-size: 1.5rem;
       font-weight: 700;
-      user-select: none;
+    }
+    #radioBtn {
+      position: absolute;
+      top: 140px;
+      left: 10px;
+      background-color: #ffffff;
+      color: #003366;
+      padding: 10px 16px;
+      cursor: pointer;
+      border: 2px solid #003366;
+      border-radius: 6px;
+      font-weight: bold;
+      z-index: 1000;
     }
     #map {
-      height: 90vh;
+      height: 60vh;
       width: 100%;
-      position: relative;
+    }
+    #contenedorTabla {
+      margin: 10px 20px;
+      overflow-y: auto;
+      max-height: 30vh;
+      border: 1px solid #ccc;
+      background: white;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+    thead {
+      background: #003366;
+      color: white;
+      position: sticky;
+      top: 0;
     }
   </style>
 </head>
 <body>
-  <div id="titulo">Visor de Plagas Forestales</div>
+  <div id="titulo">Visor de Plagas Forestales 2025</div>
+  <div id="radioBtn" onclick="activarRadio()">🎯 Activar Radio</div>
   <div id="map"></div>
+  <div id="contenedorTabla" hidden>
+    <table>
+      <thead>
+        <tr>
+          <th>Capa</th>
+          <th>Nivel de Riesgo</th>
+          <th>Latitud</th>
+          <th>Longitud</th>
+        </tr>
+      </thead>
+      <tbody id="tablaResultados"></tbody>
+    </table>
+  </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script>
     const map = L.map('map').setView([21.0, -101.0], 7);
-
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
+      maxZoom: 18,
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    const capasGeojson = [
-      { archivo: 'Areas de Atencion Prioritaria 2025.geojson', campo: null },
-      { archivo: 'Descortezador Junio 2025.geojson', campo: 'Rie_Jun_De' },
-      { archivo: 'Plantas Parasitas 2025.geojson', campo: 'Riesg_PP25' },
-      { archivo: 'Riesgo Cactoblastis Cactorum 2025.geojson', campo: 'R_Cacto' },
-      { archivo: 'Riesgo Cactophagus Spinolae 2024.geojson', campo: 'N_Riesgo' },
-      { archivo: 'Riesgo Defoliadores Junio 2025.geojson', campo: 'Ri_Def_Jun' },
-      { archivo: 'Riesgo Monarthrum 2024.geojson', campo: 'N_RIESGO' }
+    const capasInfo = [
+      { archivo: 'Descortezador Junio 2025.geojson', atributo: 'Rie_Jun_De', color: '#d73027' },
+      { archivo: 'Plantas Parasitas 2025.geojson', atributo: 'Riesg_PP25', color: '#4575b4' },
+      { archivo: 'Riesgo Cactoblastis Cactorum 2025.geojson', atributo: 'R_Cacto', color: '#fdae61' },
+      { archivo: 'Riesgo Cactophagus Spinolae 2024.geojson', atributo: 'N_Riesgo', color: '#66bd63' },
+      { archivo: 'Riesgo Defoliadores Junio 2025.geojson', atributo: 'Ri_Def_Jun', color: '#984ea3' },
+      { archivo: 'Riesgo Monarthrum 2024.geojson', atributo: 'N_RIESGO', color: '#ff7f00' },
     ];
 
-    const capasControl = {};
+    let subcapas = {};
+    let radioCapa = null;
+    let modoRadio = false;
+    const tabla = document.getElementById('tablaResultados');
+    const contenedorTabla = document.getElementById('contenedorTabla');
 
-    capasGeojson.forEach(capa => {
-      fetch(capa.archivo)
+    capasInfo.forEach(info => {
+      fetch(info.archivo)
         .then(res => res.json())
         .then(data => {
-          const layer = L.geoJSON(data, {
-            onEachFeature: function (feature, layer) {
-              let popup = `<strong>${capa.archivo.replace('.geojson', '')}</strong>`;
-              if (capa.campo && feature.properties[capa.campo] !== undefined) {
-                popup += `<br><strong>${capa.campo}:</strong> ${feature.properties[capa.campo]}`;
-              }
-              layer.bindPopup(popup);
-            },
-            pointToLayer: function (feature, latlng) {
-              return L.circleMarker(latlng, {
-                radius: 6,
-                fillColor: '#006400',
-                color: '#000',
-                weight: 1,
-                opacity: 1,
-                fillOpacity: 0.7
-              });
-            },
-            style: function (feature) {
-              return {
-                color: '#228B22',
-                weight: 1,
-                fillOpacity: 0.4
-              };
-            }
+          const grupo = L.layerGroup();
+          data.features.forEach(f => {
+            const coords = f.geometry.coordinates;
+            const latlng = [coords[1], coords[0]];
+            const marker = L.circleMarker(latlng, {
+              radius: 6,
+              fillColor: info.color,
+              color: '#000',
+              weight: 1,
+              opacity: 1,
+              fillOpacity: 0.8
+            }).bindPopup(
+              `<strong>${info.archivo}</strong><br>Nivel de riesgo: ${f.properties[info.atributo]}`
+            );
+            marker.feature = f;
+            grupo.addLayer(marker);
           });
+          grupo.addTo(map);
+          subcapas[info.archivo] = { grupo, atributo: info.atributo };
+          L.control.layers(null, { [info.archivo]: grupo }, { collapsed: false }).addTo(map);
+        });
+    });
 
-          layer.addTo(map);
-          const nombreCapa = capa.archivo.replace('.geojson', '');
-          capasControl[nombreCapa] = layer;
-          L.control.layers(null, capasControl, { collapsed: false }).addTo(map);
-        })
-        .catch(err => console.error('Error al cargar', capa.archivo, err));
+    function activarRadio() {
+      modoRadio = !modoRadio;
+      document.getElementById('radioBtn').classList.toggle('active');
+      document.getElementById('radioBtn').textContent = modoRadio ? '🛑 Cancelar Radio' : '🎯 Activar Radio';
+      if (radioCapa) {
+        map.removeLayer(radioCapa);
+        radioCapa = null;
+      }
+      tabla.innerHTML = '';
+      contenedorTabla.hidden = true;
+    }
+
+    map.on('click', e => {
+      if (!modoRadio) return;
+
+      if (radioCapa) map.removeLayer(radioCapa);
+      radioCapa = L.circle(e.latlng, {
+        radius: 500,
+        color: 'red',
+        fillColor: '#f03',
+        fillOpacity: 0.3
+      }).addTo(map);
+
+      tabla.innerHTML = '';
+      let encontrados = 0;
+
+      Object.keys(subcapas).forEach(nombre => {
+        const capa = subcapas[nombre].grupo;
+        const atributo = subcapas[nombre].atributo;
+
+        capa.eachLayer(layer => {
+          if (e.latlng.distanceTo(layer.getLatLng()) <= 500) {
+            const riesgo = layer.feature.properties[atributo] || '-';
+            const lat = layer.getLatLng().lat.toFixed(6);
+            const lng = layer.getLatLng().lng.toFixed(6);
+            tabla.innerHTML += `<tr><td>${nombre}</td><td>${riesgo}</td><td>${lat}</td><td>${lng}</td></tr>`;
+            encontrados++;
+          }
+        });
+      });
+
+      contenedorTabla.hidden = encontrados === 0;
     });
   </script>
 </body>
