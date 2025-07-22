@@ -1,59 +1,97 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <title>Visor de Incendios Urbanos</title>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <!-- Carga Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
-    <!-- Carga Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-    <style>
-        /* Hace que el mapa ocupe toda la pantalla */
-        #map {
-            height: 100vh;
-            width: 100%;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Visor de Plagas Forestales</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <style>
+    body, html {
+      margin: 0;
+      height: 100%;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f8f9fa;
+      display: flex;
+      flex-direction: column;
+    }
+    #titulo {
+      padding: 10px 20px;
+      background: #006400;
+      color: white;
+      font-size: 1.5rem;
+      font-weight: 700;
+      user-select: none;
+    }
+    #map {
+      height: 90vh;
+      width: 100%;
+      position: relative;
+    }
+  </style>
 </head>
 <body>
+  <div id="titulo">Visor de Plagas Forestales</div>
+  <div id="map"></div>
 
-<div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script>
+    const map = L.map('map').setView([21.0, -101.0], 7);
 
-<script>
-    // Crear el mapa centrado en Ciudad de México (puedes ajustar lat/lon y zoom)
-    var map = L.map('map').setView([19.43, -99.13], 11);
-
-    // Añadir capa base de OpenStreetMap
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap contributors'
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    // Cargar el archivo GeoJSON
-    fetch('Incendios Urbanos 2022.geojson')
-    .then(response => response.json())
-    .then(data => {
-        // Añadir la capa geojson al mapa
-        L.geoJSON(data, {
-            onEachFeature: function (feature, layer) {
-                // Popup con info de cada punto (puedes modificar lo que quieres mostrar)
-                let props = feature.properties;
-                let popupContent = "<b>Incidente:</b> " + props.incidente_c4 + "<br>" +
-                                   "<b>Alcaldía:</b> " + props.alcaldia_cierre + "<br>" +
-                                   "<b>Colonia:</b> " + props.colonia_cierre;
-                layer.bindPopup(popupContent);
-            }
-        }).addTo(map);
-    })
-    .catch(error => {
-        console.error('Error cargando el GeoJSON:', error);
-        alert('No se pudo cargar el archivo de datos.');
-    });
-</script>
+    const capasGeojson = [
+      { archivo: 'Areas de Atencion Prioritaria 2025.geojson', campo: null },
+      { archivo: 'Descortezador Junio 2025.geojson', campo: 'Rie_Jun_De' },
+      { archivo: 'Plantas Parasitas 2025.geojson', campo: 'Riesg_PP25' },
+      { archivo: 'Riesgo Cactoblastis Cactorum 2025.geojson', campo: 'R_Cacto' },
+      { archivo: 'Riesgo Cactophagus Spinolae 2024.geojson', campo: 'N_Riesgo' },
+      { archivo: 'Riesgo Defoliadores Junio 2025.geojson', campo: 'Ri_Def_Jun' },
+      { archivo: 'Riesgo Monarthrum 2024.geojson', campo: 'N_RIESGO' }
+    ];
 
+    const capasControl = {};
+
+    capasGeojson.forEach(capa => {
+      fetch(capa.archivo)
+        .then(res => res.json())
+        .then(data => {
+          const layer = L.geoJSON(data, {
+            onEachFeature: function (feature, layer) {
+              let popup = `<strong>${capa.archivo.replace('.geojson', '')}</strong>`;
+              if (capa.campo && feature.properties[capa.campo] !== undefined) {
+                popup += `<br><strong>${capa.campo}:</strong> ${feature.properties[capa.campo]}`;
+              }
+              layer.bindPopup(popup);
+            },
+            pointToLayer: function (feature, latlng) {
+              return L.circleMarker(latlng, {
+                radius: 6,
+                fillColor: '#006400',
+                color: '#000',
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.7
+              });
+            },
+            style: function (feature) {
+              return {
+                color: '#228B22',
+                weight: 1,
+                fillOpacity: 0.4
+              };
+            }
+          });
+
+          layer.addTo(map);
+          const nombreCapa = capa.archivo.replace('.geojson', '');
+          capasControl[nombreCapa] = layer;
+          L.control.layers(null, capasControl, { collapsed: false }).addTo(map);
+        })
+        .catch(err => console.error('Error al cargar', capa.archivo, err));
+    });
+  </script>
 </body>
 </html>
