@@ -3,16 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Visor de Plagas Forestales</title>
+  <title>Visor de Plagas Forestales CDMX</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <style>
     body, html {
-      margin: 0;
-      height: 100%;
+      margin: 0; height: 100%;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background: #f8f9fa;
-      display: flex;
-      flex-direction: column;
+      display: flex; flex-direction: column;
     }
     #titulo {
       padding: 10px 20px;
@@ -24,8 +22,7 @@
     }
     #radioBtn {
       position: absolute;
-      top: 100px;
-      left: 10px;
+      top: 100px; left: 10px;
       background-color: #ffffff;
       color: #006400;
       padding: 10px 16px;
@@ -59,20 +56,22 @@
   </style>
 </head>
 <body>
-  <div id="titulo">Visor de Plagas Forestales</div>
+  <div id="titulo">Visor de Plagas Forestales CDMX</div>
   <div id="radioBtn" onclick="toggleRadio()">🎯 Activar Radio</div>
   <div id="map"></div>
 
+  <!-- Turf.js para análisis geoespacial -->
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script>
-    const map = L.map('map').setView([21.0, -101.0], 7);
+    // Centrar en CDMX aprox
+    const map = L.map('map').setView([19.43, -99.13], 11);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    // Configuración de capas con archivo, campo para "Nivel de riesgo" y color
     const capasGeojson = [
       { archivo: 'Areas de Atencion Prioritaria 2025.geojson', campo: null, color: '#1f78b4' },
       { archivo: 'Descortezador Junio 2025.geojson', campo: 'Rie_Jun_De', color: '#33a02c' },
@@ -84,61 +83,49 @@
     ];
 
     const capasControl = {};
-    const layersGroup = L.layerGroup().addTo(map);
-    let radioActivo = false;
-    let radioCapa = null;
-    const radioBtn = document.getElementById('radioBtn');
+    let capasCargadas = {}; // para almacenar las capas geojson
 
+    // Cargar y agregar capas
     function cargarCapas() {
       capasGeojson.forEach(capa => {
         fetch(capa.archivo)
           .then(res => res.json())
           .then(data => {
             const layer = L.geoJSON(data, {
+              style: () => ({
+                color: capa.color,
+                weight: 1,
+                fillOpacity: 0.5
+              }),
               onEachFeature: function (feature, layer) {
                 let popup = `<strong>${capa.archivo.replace('.geojson', '')}</strong>`;
                 if (capa.campo && feature.properties[capa.campo] !== undefined) {
                   popup += `<br><strong>Nivel de riesgo:</strong> ${feature.properties[capa.campo]}`;
                 }
                 layer.bindPopup(popup);
-              },
-              pointToLayer: function (feature, latlng) {
-                return L.circleMarker(latlng, {
-                  radius: 6,
-                  fillColor: capa.color,
-                  color: '#000',
-                  weight: 1,
-                  opacity: 1,
-                  fillOpacity: 0.7
-                });
-              },
-              style: function (feature) {
-                return {
-                  color: capa.color,
-                  weight: 1,
-                  fillOpacity: 0.4
-                };
               }
             });
-            layer.addTo(layersGroup);
-            const nombreCapa = capa.archivo.replace('.geojson', '');
-            capasControl[nombreCapa] = layer;
-            // Actualiza el control de capas (una sola vez)
-            if (!map.hasLayer(controlCapas)) {
+            layer.addTo(map);
+            capasControl[capa.archivo.replace('.geojson', '')] = layer;
+            capasCargadas[capa.archivo.replace('.geojson', '')] = layer;
+
+            if (!controlCapas) {
               controlCapas = L.control.layers(null, capasControl, { collapsed: false }).addTo(map);
             } else {
-              controlCapas.addOverlay(layer, nombreCapa);
+              controlCapas.addOverlay(layer, capa.archivo.replace('.geojson', ''));
             }
           })
           .catch(err => console.error('Error al cargar', capa.archivo, err));
       });
     }
-
     let controlCapas;
-
     cargarCapas();
 
-    // Función para activar/desactivar radio
+    // Radio
+    let radioActivo = false;
+    let radioCapa = null;
+    const radioBtn = document.getElementById('radioBtn');
+
     function toggleRadio() {
       radioActivo = !radioActivo;
       radioBtn.classList.toggle('active');
@@ -154,6 +141,7 @@
           map.removeLayer(radioCapa);
           radioCapa = null;
         }
+        // Crear círculo radio 500m
         radioCapa = L.circle(e.latlng, {
           radius: 500,
           color: 'red',
@@ -161,30 +149,37 @@
           fillOpacity: 0.2
         }).addTo(map);
 
-        // Buscar elementos dentro del radio
-        let conteo = 0;
-        let resultados = [];
-        let capasVisibles = Object.values(capasControl).filter(layer => map.hasLayer(layer));
+        // Crear polígono turf del círculo
+        const center = [e.latlng.lng, e.latlng.lat]; // turf usa [lng, lat]
+        const turfCircle = turf.circle(center, 0.5, { units: 'kilometers' }); // radio 0.5 km
 
-        capasVisibles.forEach(layer => {
-          layer.eachLayer(marker => {
-            if (marker.getLatLng && e.latlng.distanceTo(marker.getLatLng()) <= 500) {
-              conteo++;
-              let props = marker.feature?.properties || {};
-              resultados.push({
-                capa: marker.feature?.layerName || 'Desconocido',
-                nivel: Object.keys(props).find(k => k.toLowerCase().includes('riesgo')) ? props[Object.keys(props).find(k => k.toLowerCase().includes('riesgo'))] : 'N/A',
-                lat: marker.getLatLng().lat.toFixed(6),
-                lng: marker.getLatLng().lng.toFixed(6)
-              });
+        // Buscar polígonos que intersectan
+        let totalEncontrados = 0;
+        let resumen = '';
+
+        Object.entries(capasCargadas).forEach(([nombre, layer]) => {
+          if (!map.hasLayer(layer)) return; // Solo capas visibles
+
+          let encontradosPorCapa = 0;
+
+          layer.eachLayer(featureLayer => {
+            const geojsonFeature = featureLayer.toGeoJSON();
+            if (turf.booleanIntersects(turfCircle, geojsonFeature)) {
+              encontradosPorCapa++;
+              totalEncontrados++;
             }
           });
+
+          if(encontradosPorCapa > 0){
+            resumen += `<br>${nombre}: ${encontradosPorCapa} polígono(s)`;
+          }
         });
 
-        radioCapa.bindPopup(`Elementos en radio 500m: <strong>${conteo}</strong>`).openPopup();
+        const mensaje = totalEncontrados > 0 
+          ? `Elementos dentro del radio 500 m: <strong>${totalEncontrados}</strong> ${resumen}`
+          : 'No se encontraron elementos dentro del radio de 500 metros.';
 
-        console.log('Elementos dentro del radio:', resultados);
-        alert(`Elementos dentro del radio 500m: ${conteo}`);
+        radioCapa.bindPopup(mensaje).openPopup();
       });
     }
   </script>
