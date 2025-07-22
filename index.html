@@ -3,208 +3,218 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Visor de Plagas Forestales</title>
+  <title>Visor de Plagas Forestales CDMX</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <style>
     body, html {
-      margin: 0;
-      height: 100%;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex; flex-direction: column;
       background: #f8f9fa;
-      display: flex;
-      flex-direction: column;
     }
     #titulo {
-      padding: 10px 20px;
-      background: #006400;
-      color: white;
-      font-size: 1.5rem;
-      font-weight: 700;
-      user-select: none;
-      position: relative;
-    }
-    #radioBtn, #clearBtn {
-      position: absolute;
-      top: 50px;
-      left: 10px;
-      background-color: #ffffff;
-      color: #006400;
-      padding: 10px 16px;
-      cursor: pointer;
-      border: 2px solid #006400;
-      border-radius: 6px;
-      font-weight: bold;
-      z-index: 1000;
-      user-select: none;
-      box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
-      transition: background-color 0.3s, color 0.3s, border-color 0.3s;
-      margin-bottom: 5px;
-      display: inline-block;
-    }
-    #radioBtn:hover, #clearBtn:hover {
-      background-color: #e6f0ff;
-      color: #004d00;
-      border-color: #004d00;
-    }
-    #radioBtn.active {
-      background-color: #c82333;
-      color: #fff;
-      border-color: #bd2130;
-    }
-    #radioBtn.active:hover {
-      background-color: #a71d2a;
+      background: #006400; color: white; padding: 12px 20px;
+      font-weight: 700; font-size: 1.5rem; user-select: none;
     }
     #map {
-      height: 90vh;
-      width: 100%;
-      position: relative;
-      margin-top: 80px;
+      flex-grow: 1; width: 100%;
+    }
+    #radioBtn {
+      position: absolute; top: 100px; left: 10px;
+      z-index: 1000;
+      background: white;
+      border: 2px solid #006400;
+      border-radius: 6px;
+      padding: 8px 14px;
+      cursor: pointer;
+      font-weight: 700;
+      color: #006400;
+      user-select: none;
+      box-shadow: 2px 2px 5px rgba(0,0,0,0.25);
+      transition: background-color 0.3s, color 0.3s;
+    }
+    #radioBtn:hover {
+      background-color: #e6f0e6;
+    }
+    #radioBtn.active {
+      background-color: #006400;
+      color: white;
+    }
+    #infoTabla {
+      max-height: 200px;
+      overflow-y: auto;
+      background: white;
+      border-top: 2px solid #006400;
+      padding: 10px 20px;
+      font-size: 0.9rem;
+    }
+    table {
+      width: 100%; border-collapse: collapse;
+    }
+    th, td {
+      border: 1px solid #ccc; padding: 6px 8px;
+      text-align: left;
+      word-break: break-word;
+    }
+    th {
+      background-color: #006400; color: white;
+      position: sticky; top: 0;
+      z-index: 1;
     }
   </style>
 </head>
 <body>
-  <div id="titulo">
-    Visor de Plagas Forestales
-    <button id="radioBtn">🎯 Activar Radio</button>
-    <button id="clearBtn">🗑️ Limpiar Radios</button>
-  </div>
-  <div id="map"></div>
 
-  <!-- Turf.js para análisis espacial -->
-  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+  <div id="titulo">Visor de Plagas Forestales CDMX</div>
+  <button id="radioBtn">🎯 Activar Radio</button>
+  <div id="map"></div>
+  <div id="infoTabla" hidden>
+    <table>
+      <thead>
+        <tr>
+          <th>Capa</th>
+          <th>Nivel de Riesgo</th>
+          <th>Información</th>
+        </tr>
+      </thead>
+      <tbody id="tablaCuerpo"></tbody>
+    </table>
+  </div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
   <script>
-    const map = L.map('map').setView([19.4, -99.14], 11);
+    // Configuración inicial
+    const map = L.map('map').setView([19.4, -99.15], 12);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    // Configuración de capas GeoJSON y campo para nivel de riesgo
+    // Botón radio
+    const radioBtn = document.getElementById('radioBtn');
+    let radioActivo = false;
+    radioBtn.onclick = () => {
+      radioActivo = !radioActivo;
+      radioBtn.classList.toggle('active', radioActivo);
+      radioBtn.textContent = radioActivo ? '🛑 Desactivar Radio' : '🎯 Activar Radio';
+      if (!radioActivo) {
+        // Limpia todos los radios y tabla cuando se desactiva radio
+        radios.forEach(c => map.removeLayer(c));
+        radios = [];
+        limpiarTabla();
+      }
+    };
+
+    // Capas GeoJSON con su campo para "Nivel de Riesgo"
     const capasGeojson = [
-      { archivo: 'Areas de Atencion Prioritaria 2025.geojson', campo: null },
-      { archivo: 'Descortezador Junio 2025.geojson', campo: 'Rie_Jun_De' },
-      { archivo: 'Plantas Parasitas 2025.geojson', campo: 'Riesg_PP25' },
-      { archivo: 'Riesgo Cactoblastis Cactorum 2025.geojson', campo: 'R_Cacto' },
-      { archivo: 'Riesgo Cactophagus Spinolae 2024.geojson', campo: 'N_Riesgo' },
-      { archivo: 'Riesgo Defoliadores Junio 2025.geojson', campo: 'Ri_Def_Jun' },
-      { archivo: 'Riesgo Monarthrum 2024.geojson', campo: 'N_RIESGO' }
+      { archivo: 'Areas de Atencion Prioritaria 2025.geojson', campo: null, nombre: 'Areas de Atencion Prioritaria' , color: '#1f77b4' },
+      { archivo: 'Descortezador Junio 2025.geojson', campo: 'Rie_Jun_De', nombre: 'Descortezador Junio 2025', color: '#ff7f0e' },
+      { archivo: 'Plantas Parasitas 2025.geojson', campo: 'Riesg_PP25', nombre: 'Plantas Parasitas 2025', color: '#2ca02c' },
+      { archivo: 'Riesgo Cactoblastis Cactorum 2025.geojson', campo: 'R_Cacto', nombre: 'Riesgo Cactoblastis Cactorum', color: '#d62728' },
+      { archivo: 'Riesgo Cactophagus Spinolae 2024.geojson', campo: 'N_Riesgo', nombre: 'Riesgo Cactophagus Spinolae', color: '#9467bd' },
+      { archivo: 'Riesgo Defoliadores Junio 2025.geojson', campo: 'Ri_Def_Jun', nombre: 'Riesgo Defoliadores Junio', color: '#8c564b' },
+      { archivo: 'Riesgo Monarthrum 2024.geojson', campo: 'N_RIESGO', nombre: 'Riesgo Monarthrum', color: '#e377c2' }
     ];
 
-    const colores = ['#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0'];
-
     const capasControl = {};
-    const capasCargadas = {}; // Para guardar layers y hacer análisis espacial
     let radios = [];
-    let radioActivo = false;
+    let geojsonLayers = [];
 
-    // Cargar capas
-    capasGeojson.forEach((capa, i) => {
-      fetch(capa.archivo)
+    // Carga las capas y crea el control de capas
+    Promise.all(
+      capasGeojson.map(capa => fetch(capa.archivo)
         .then(res => res.json())
         .then(data => {
           const layer = L.geoJSON(data, {
-            style: {
-              color: colores[i],
-              weight: 1,
-              fillOpacity: 0.4
-            },
-            onEachFeature: function(feature, layer) {
-              let popup = `<strong>${capa.archivo.replace('.geojson', '')}</strong>`;
+            style: feature => ({
+              color: capa.color,
+              weight: 2,
+              fillOpacity: 0.3,
+              fillColor: capa.color
+            }),
+            onEachFeature: function (feature, layer) {
+              let popup = `<strong>${capa.nombre}</strong>`;
               if (capa.campo && feature.properties[capa.campo] !== undefined) {
                 popup += `<br><strong>Nivel de riesgo:</strong> ${feature.properties[capa.campo]}`;
               }
               layer.bindPopup(popup);
             }
-          }).addTo(map);
-
-          const nombreCapa = capa.archivo.replace('.geojson', '');
-          capasControl[nombreCapa] = layer;
-          capasCargadas[nombreCapa] = layer;
-
-          // Añadir control capas (se actualiza cada vez, pero está bien para pocos)
-          L.control.layers(null, capasControl, { collapsed: false }).addTo(map);
+          });
+          layer.addTo(map);
+          capasControl[capa.nombre] = layer;
+          geojsonLayers.push({ layer, campo: capa.campo, nombre: capa.nombre });
+          return layer;
         })
-        .catch(err => console.error('Error al cargar', capa.archivo, err));
-    });
+      )
+    ).then(() => {
+      L.control.layers(null, capasControl, { collapsed: false }).addTo(map);
+    }).catch(err => console.error('Error al cargar capas:', err));
 
-    // Botones
-    const radioBtn = document.getElementById('radioBtn');
-    const clearBtn = document.getElementById('clearBtn');
+    // Limpiar tabla info
+    const tablaCuerpo = document.getElementById('tablaCuerpo');
+    const infoTabla = document.getElementById('infoTabla');
+    function limpiarTabla() {
+      tablaCuerpo.innerHTML = '';
+      infoTabla.hidden = true;
+    }
 
-    radioBtn.addEventListener('click', () => {
-      radioActivo = !radioActivo;
-      radioBtn.classList.toggle('active');
-      radioBtn.textContent = radioActivo ? '🛑 Desactivar Radio' : '🎯 Activar Radio';
-    });
-
-    clearBtn.addEventListener('click', () => {
-      radios.forEach(c => map.removeLayer(c));
-      radios = [];
-    });
-
-    // Evento click para agregar radios y analizar intersección
+    // Escuchar clicks en el mapa cuando radio activo
     map.on('click', function(e) {
       if (!radioActivo) return;
 
-      // Crear círculo radio 500 metros
-      const nuevoRadio = L.circle(e.latlng, {
-        radius: 500,
-        color: 'red',
-        fillColor: '#f03',
-        fillOpacity: 0.2
-      }).addTo(map);
+      // Crear círculo radio 500 m
+      const radio = L.circle(e.latlng, { radius: 500, color: '#006400', fillColor: '#6aaa6a', fillOpacity: 0.3 }).addTo(map);
+      radios.push(radio);
 
-      radios.push(nuevoRadio);
+      // Buscar polígonos intersectados
+      const resultados = [];
 
-      // Crear círculo turf para análisis espacial (lng, lat)
-      const center = [e.latlng.lng, e.latlng.lat];
-      const turfCircle = turf.circle(center, 0.5, { units: 'kilometers' });
+      geojsonLayers.forEach(({ layer, campo, nombre }) => {
+        layer.eachLayer(fLayer => {
+          const geom = fLayer.feature.geometry;
+          // Usamos turf para la intersección
+          const puntoCentro = turf.point([e.latlng.lng, e.latlng.lat]);
+          const radioBuffer = turf.buffer(puntoCentro, 0.5, { units: 'kilometers' });
 
-      let totalEncontrados = 0;
-      let resumen = '';
-      let nivelesPorCapa = {};
+          let featureGeom = fLayer.feature.geometry;
 
-      Object.entries(capasCargadas).forEach(([nombre, layer]) => {
-        if (!map.hasLayer(layer)) return; // Solo capas visibles
+          // Para GeoJSON, turf requiere geometrías compatibles
+          let intersecta = false;
+          try {
+            intersecta = turf.booleanIntersects(featureGeom, radioBuffer);
+          } catch {
+            intersecta = false;
+          }
 
-        let encontradosPorCapa = 0;
-        let nivelesRiesgo = [];
-
-        layer.eachLayer(featureLayer => {
-          const geojsonFeature = featureLayer.toGeoJSON();
-          if (turf.booleanIntersects(turfCircle, geojsonFeature)) {
-            encontradosPorCapa++;
-            totalEncontrados++;
-
-            // Extraer nivel de riesgo
-            const capaInfo = capasGeojson.find(c => c.archivo.replace('.geojson', '') === nombre);
-            if (capaInfo && capaInfo.campo) {
-              const nivel = featureLayer.feature.properties[capaInfo.campo];
-              if (nivel) nivelesRiesgo.push(nivel);
-            }
+          if (intersecta) {
+            let nivel = campo ? fLayer.feature.properties[campo] : 'N/A';
+            resultados.push({
+              capa: nombre,
+              riesgo: nivel,
+              info: JSON.stringify(fLayer.feature.properties).slice(0, 100) + '...'
+            });
           }
         });
-
-        if (encontradosPorCapa > 0) {
-          resumen += `<br><strong>${nombre}:</strong> ${encontradosPorCapa} polígono(s)`;
-
-          if (nivelesRiesgo.length > 0) {
-            let contador = {};
-            nivelesRiesgo.forEach(n => contador[n] = (contador[n] || 0) + 1);
-            let nivelMasComun = Object.entries(contador).sort((a,b) => b[1] - a[1])[0][0];
-            resumen += ` (Nivel de riesgo frecuente: ${nivelMasComun})`;
-          }
-        }
       });
 
-      const mensaje = totalEncontrados > 0 
-        ? `Elementos dentro del radio 500 m: <strong>${totalEncontrados}</strong>${resumen}`
-        : 'No se encontraron elementos dentro del radio de 500 metros.';
-
-      nuevoRadio.bindPopup(mensaje).openPopup();
+      // Mostrar resultados en tabla
+      tablaCuerpo.innerHTML = '';
+      if (resultados.length > 0) {
+        resultados.forEach(r => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${r.capa}</td><td>${r.riesgo}</td><td>${r.info}</td>`;
+          tablaCuerpo.appendChild(tr);
+        });
+        infoTabla.hidden = false;
+      } else {
+        infoTabla.hidden = true;
+        alert('No se encontraron polígonos intersectando el radio.');
+      }
     });
+
   </script>
+
 </body>
 </html>
+
